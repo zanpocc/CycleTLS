@@ -3,8 +3,6 @@ package cycletls
 import (
 	"encoding/json"
 	"flag"
-	http "github.com/Danny-Dasilva/fhttp"
-	"github.com/gorilla/websocket"
 	"io"
 	"log"
 	nhttp "net/http"
@@ -12,6 +10,9 @@ import (
 	"os"
 	"runtime"
 	"strings"
+
+	http "github.com/Danny-Dasilva/fhttp"
+	"github.com/gorilla/websocket"
 )
 
 // Options sets CycleTLS client options
@@ -49,6 +50,7 @@ type Response struct {
 	RequestID string
 	Status    int
 	Body      string
+	Body2     io.Reader
 	Headers   map[string]string
 	Cookies   []*nhttp.Cookie
 	FinalUrl  string
@@ -218,11 +220,68 @@ func dispatcher(res fullRequest) (response Response, err error) {
 		RequestID: res.options.RequestID,
 		Status:    resp.StatusCode,
 		Body:      Body,
+		Body2:     strings.NewReader(""),
 		Headers:   headers,
 		Cookies:   cookies,
 		FinalUrl:  finalUrl,
 	}, nil
 
+}
+
+func dispatcher2(res fullRequest) (response Response, err error) {
+	defer res.client.CloseIdleConnections()
+	finalUrl := res.options.Options.URL
+	resp, err := res.client.Do(res.req)
+	if err != nil {
+
+		parsedError := parseError(err)
+
+		headers := make(map[string]string)
+		var cookies []*nhttp.Cookie
+		return Response{RequestID: res.options.RequestID, Status: parsedError.StatusCode, Body: parsedError.ErrorMsg + "-> \n" + string(err.Error()), Headers: headers, Cookies: cookies, FinalUrl: finalUrl}, nil //normally return error here
+
+	}
+
+	// 自己关
+	// defer resp.Body.Close()
+
+	if resp != nil && resp.Request != nil && resp.Request.URL != nil {
+		finalUrl = resp.Request.URL.String()
+	}
+
+	// encoding := resp.Header["Content-Encoding"]
+	// content := resp.Header["Content-Type"]
+
+	// bodyBytes, err := io.ReadAll(resp.Body)
+
+	// if err != nil {
+	// 	log.Print("Parse Bytes" + err.Error())
+	// 	return response, err
+	// }
+
+	// 不能压缩
+	// Body := DecompressBody(bodyBytes, encoding, content)
+	headers := make(map[string]string)
+
+	for name, values := range resp.Header {
+		if name == "Set-Cookie" {
+			headers[name] = strings.Join(values, "/,/")
+		} else {
+			for _, value := range values {
+				headers[name] = value
+			}
+		}
+	}
+	cookies := convertFHTTPCookiesToNetHTTPCookies(resp.Cookies())
+	return Response{
+		RequestID: res.options.RequestID,
+		Status:    resp.StatusCode,
+		Body:      "",
+		Body2:     resp.Body,
+		Headers:   headers,
+		Cookies:   cookies,
+		FinalUrl:  finalUrl,
+	}, nil
 }
 
 // Queue queues request in worker pool
@@ -241,18 +300,43 @@ func (client CycleTLS) Do(URL string, options Options, Method string) (response 
 
 	options.URL = URL
 	options.Method = Method
-	 // Set default values if not provided
-	 if options.Ja3 == "" {
-        options.Ja3 = "771,4865-4866-4867-49195-49199-49196-49200-52393-52392-49171-49172-156-157-47-53,18-35-65281-45-17513-27-65037-16-10-11-5-13-0-43-23-51,29-23-24,0"
-    }
-    if options.UserAgent == "" {
+	// Set default values if not provided
+	if options.Ja3 == "" {
+		options.Ja3 = "771,4865-4866-4867-49195-49199-49196-49200-52393-52392-49171-49172-156-157-47-53,18-35-65281-45-17513-27-65037-16-10-11-5-13-0-43-23-51,29-23-24,0"
+	}
+	if options.UserAgent == "" {
 		// Mac OS Chrome 121
-        options.UserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
-    }
+		options.UserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+	}
 	opt := cycleTLSRequest{"cycleTLSRequest", options}
 
 	res := processRequest(opt)
 	response, err = dispatcher(res)
+	if err != nil {
+		log.Print("Request Failed: " + err.Error())
+		return response, err
+	}
+
+	return response, nil
+}
+
+// 测试
+func (client CycleTLS) Do2(URL string, options Options, Method string) (response Response, err error) {
+
+	options.URL = URL
+	options.Method = Method
+	// Set default values if not provided
+	if options.Ja3 == "" {
+		options.Ja3 = "771,4865-4866-4867-49195-49199-49196-49200-52393-52392-49171-49172-156-157-47-53,18-35-65281-45-17513-27-65037-16-10-11-5-13-0-43-23-51,29-23-24,0"
+	}
+	if options.UserAgent == "" {
+		// Mac OS Chrome 121
+		options.UserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+	}
+	opt := cycleTLSRequest{"cycleTLSRequest", options}
+
+	res := processRequest(opt)
+	response, err = dispatcher2(res)
 	if err != nil {
 		log.Print("Request Failed: " + err.Error())
 		return response, err
