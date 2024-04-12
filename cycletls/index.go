@@ -50,7 +50,7 @@ type Response struct {
 	RequestID string
 	Status    int
 	Body      string
-	Body2     io.Reader
+	Body2     *io.ReadCloser
 	Headers   map[string]string
 	Cookies   []*nhttp.Cookie
 	FinalUrl  string
@@ -220,7 +220,7 @@ func dispatcher(res fullRequest) (response Response, err error) {
 		RequestID: res.options.RequestID,
 		Status:    resp.StatusCode,
 		Body:      Body,
-		Body2:     strings.NewReader(""),
+		Body2:     nil,
 		Headers:   headers,
 		Cookies:   cookies,
 		FinalUrl:  finalUrl,
@@ -277,7 +277,7 @@ func dispatcher2(res fullRequest) (response Response, err error) {
 		RequestID: res.options.RequestID,
 		Status:    resp.StatusCode,
 		Body:      "",
-		Body2:     resp.Body,
+		Body2:     &resp.Body,
 		Headers:   headers,
 		Cookies:   cookies,
 		FinalUrl:  finalUrl,
